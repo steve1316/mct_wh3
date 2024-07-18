@@ -79,106 +79,111 @@ function Registry:get_profiles()
     return self.__saved_profiles
 end
 
---- @param t table
---- @param ignored_fields table<string>
---- @param loop_value number
---- @return table<string>
-local function inner_loop_fast_print(t, ignored_fields, loop_value)
-    --- @type table<any>
-	local table_string = {'{\n'}
-	--- @type table<any>
-	local temp_table = {}
-    for key, value in pairs(t) do
-        table_string[#table_string + 1] = string.rep('\t', loop_value + 1)
+--- Cached indent strings, so deep tables don't rebuild them for every line.
+---@type table<number, string>
+local indents = {}
 
-        if type(key) == "string" then
-            table_string[#table_string + 1] = '["'
-            table_string[#table_string + 1] = key
-            table_string[#table_string + 1] = '"] = '
-        elseif type(key) == "number" then
-            table_string[#table_string + 1] = '['
-            table_string[#table_string + 1] = key
-            table_string[#table_string + 1] = '] = '
-        else
-            table_string[#table_string + 1] = '['
-            table_string[#table_string + 1] = tostring(key)
-            table_string[#table_string + 1] = '] = '
-        end
-
-		if type(value) == "table" then
-			temp_table = inner_loop_fast_print(value, ignored_fields, loop_value + 1)
-			for i = 1, #temp_table do
-				table_string[#table_string + 1] = temp_table[i]
-			end
-		elseif type(value) == "string" then
-			table_string[#table_string + 1] = '[=['
-			table_string[#table_string + 1] = value
-			table_string[#table_string + 1] = ']=],\n'
-		else
-			table_string[#table_string + 1] = tostring(value)
-			table_string[#table_string + 1] = ',\n'
-		end
+--- Get `n` tabs as a string.
+---@param n number
+---@return string
+local function indent(n)
+    local s = indents[n]
+    if not s then
+        s = string.rep('\t', n)
+        indents[n] = s
     end
-
-	table_string[#table_string + 1] = string.rep('\t', loop_value)
-    table_string[#table_string + 1] = "},\n"
-
-    return table_string
+    return s
 end
 
+--- Append a table key, as `["key"] = ` or `[key] = `, to `buf` after index `n`.
+---@param buf string[]
+---@param n number The last used index in `buf`.
+---@param key any
+---@return number #The new last used index.
+local function write_key(buf, n, key)
+    if type(key) == "string" then
+        buf[n+1] = '["'
+        buf[n+2] = key
+        buf[n+3] = '"] = '
+    else
+        buf[n+1] = '['
+        buf[n+2] = type(key) == "number" and key or tostring(key)
+        buf[n+3] = '] = '
+    end
+    return n + 3
+end
 
+--- Append a nested table to `buf` after index `n`. Everything goes into one buffer, so nested values are never copied between tables.
+---@param buf string[]
+---@param n number The last used index in `buf`.
+---@param t table
+---@param depth number How deep `t` is, for the indent.
+---@return number #The new last used index.
+local function write_table(buf, n, t, depth)
+    buf[n+1] = '{\n'
+    n = n + 1
+
+    for key, value in pairs(t) do
+        buf[n+1] = indent(depth + 1)
+        n = write_key(buf, n + 1, key)
+
+        if type(value) == "table" then
+            n = write_table(buf, n, value, depth + 1)
+        elseif type(value) == "string" then
+            buf[n+1] = '[=['
+            buf[n+2] = value
+            buf[n+3] = ']=],\n'
+            n = n + 3
+        else
+            buf[n+1] = tostring(value)
+            buf[n+2] = ',\n'
+            n = n + 2
+        end
+    end
+
+    buf[n+1] = indent(depth)
+    buf[n+2] = "},\n"
+    return n + 2
+end
+
+--- Turn a table into Lua source that `loadstring` reads back.
 --- @param t table
---- @param ignored_fields table<string>?
+--- @param ignored_fields table<string>? Unused, kept for the old signature.
 --- @return string|boolean
 local function fast_print(t, ignored_fields)
     if not (type(t) == "table") then
         return false
     end
 
-    --- @type table<any>
-    local table_string = {'{\n'}
-	--- @type table<any>
-	local temp_table = {}
+    ---@type string[]
+    local buf = {'{\n'}
+    local n = 1
 
     for key, value in pairs(t) do
-
-        table_string[#table_string + 1] = string.rep('\t', 1)
-        if type(key) == "string" then
-            table_string[#table_string + 1] = '["'
-            table_string[#table_string + 1] = key
-            table_string[#table_string + 1] = '"] = '
-        elseif type(key) == "number" then
-            table_string[#table_string + 1] = '['
-            table_string[#table_string + 1] = key
-            table_string[#table_string + 1] = '] = '
-        else
-            --- TODO skip it somehow?
-            table_string[#table_string + 1] = '['
-            table_string[#table_string + 1] = tostring(key)
-            table_string[#table_string + 1] = '] = '
-        end
+        buf[n+1] = '\t'
+        n = write_key(buf, n + 1, key)
 
         if type(value) == "table" then
-            temp_table = inner_loop_fast_print(value, ignored_fields, 1)
-            for i = 1, #temp_table do
-                table_string[#table_string + 1] = temp_table[i]
-            end
+            n = write_table(buf, n, value, 1)
         elseif type(value) == "string" then
-            table_string[#table_string + 1] = '[=['
-            table_string[#table_string + 1] = value
-            table_string[#table_string + 1] = ']=],\n'
+            buf[n+1] = '[=['
+            buf[n+2] = value
+            buf[n+3] = ']=],\n'
+            n = n + 3
         elseif type(value) == "boolean" or type(value) == "number" then
-            table_string[#table_string + 1] = tostring(value)
-            table_string[#table_string + 1] = ',\n'
+            buf[n+1] = tostring(value)
+            buf[n+2] = ',\n'
+            n = n + 2
         else
             -- unsupported type, technically.
-            table_string[#table_string+1] = "nil,\n"
+            buf[n+1] = "nil,\n"
+            n = n + 1
         end
     end
 
-    table_string[#table_string + 1] = "}\n"
+    buf[n+1] = "}\n"
 
-    return table.concat(table_string)
+    return table.concat(buf)
 end
 
 function Registry:port_forward()
