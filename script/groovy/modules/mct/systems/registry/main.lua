@@ -39,6 +39,12 @@ local defaults = {
 
     __main_file = "mct_registry.lua",
     __profiles_file = "mct_profiles.lua",
+
+    ---@type table? The registry file's contents, kept after reading so each save doesn't re-read and re-parse the whole file.
+    __file_data = nil,
+
+    ---@type number? The registry file's size on disk when `__file_data` was last read or written. A different size means it changed.
+    __file_size = nil,
 }
 
 ---@class MCT.Registry : Class
@@ -660,25 +666,39 @@ function Registry:save_profiles_file()
     file:close()
 end
 
---- TODO split this up into a few sub functions so it's easier to call externally
-function Registry:read_registry_file()
-    local file = self:get_file(self.__main_file, "r+")
+--- Get the registry file's contents. They're kept after the first read, and only read again if the file's size on disk changed.
+---@return table? #The contents, or nil if the file is missing or can't be read.
+function Registry:get_file_data()
+    local file = self:get_file(self.__main_file, "r")
+    if not file then return nil end
 
-    if not file then self:save_file_with_defaults() return self:read_registry_file() end
+    local size = file:seek("end")
+    if self.__file_data and size == self.__file_size then
+        file:close()
+        return self.__file_data
+    end
 
+    file:seek("set", 0)
     local str = file:read("*a")
     file:close()
 
-    local t, t_err = loadstring(str)
-
-    if not t then
-        --- Don't read - set values to default and save immediately.
-        errf("Error while reading MCT.Registry file: " .. tostring(t_err))
-        self:save_file_with_defaults()
-        return self:read_registry_file()
+    local chunk, load_err = loadstring(str)
+    if not chunk then
+        errf("Error while reading MCT.Registry file: " .. tostring(load_err))
+        return nil
     end
 
-    t = t()
+    local t = chunk()
+    if not is_table(t) then return nil end
+
+    self.__file_data = t
+    self.__file_size = size
+    return t
+end
+
+--- TODO split this up into a few sub functions so it's easier to call externally
+function Registry:read_registry_file()
+    local t = self:get_file_data()
 
     if not t or not t.global then
         --- Don't read - set values to default and save immediately.
@@ -774,7 +794,11 @@ end
 
 function Registry:save_file_with_defaults()
     local file = self:get_file(self.__main_file, "w+")
-    
+
+    -- the file is being replaced, so the kept contents are out of date
+    self.__file_data = nil
+    self.__file_size = nil
+
     logf("Saving registry file with defaults.")
 
     local t = {
@@ -822,11 +846,7 @@ function Registry:save_file_with_defaults()
 end
 
 function Registry:save_registry_file()
-    local old = self:get_file(self.__main_file, "r+")
-    local str = old:read("*a")
-    local t = loadstring(str)()
-
-    old:close()
+    local t = self:get_file_data()
 
     local st = os.clock()
 
@@ -958,6 +978,10 @@ function Registry:save_registry_file()
     local file = self:get_file(self.__main_file, "w+")
     ---@cast file file*
     file:write("return " .. t_str)
+
+    -- remember what was written, so the next save can skip reading the file back
+    self.__file_data = t
+    self.__file_size = file:seek("cur")
     file:close()
 
     local et3 = os.clock() - st3
