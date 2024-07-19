@@ -691,9 +691,84 @@ function Registry:get_file_data()
     local t = chunk()
     if not is_table(t) then return nil end
 
+    self:move_campaigns_to_files(t, str)
+
     self.__file_data = t
     self.__file_size = size
     return t
+end
+
+--- Get the file name holding one campaign's settings.
+---@param index number The campaign's index.
+---@return string
+function Registry:get_campaign_file_name(index)
+    return string.format("mct_registry_campaign_%d.lua", index)
+end
+
+--- Read a file next to the registry file, without logging an error when it doesn't exist.
+---@param file_name string
+---@return string? #The file's text, or nil if it doesn't exist.
+function Registry:read_optional_file(file_name)
+    local file = io.open(self.appdata_path .. file_name, "r") or io.open(file_name, "r")
+    if not file then return nil end
+
+    local str = file:read("*a")
+    file:close()
+    return str
+end
+
+--- Write a table as a Lua file next to the registry file.
+---@param file_name string
+---@param t table
+function Registry:write_lua_file(file_name, t)
+    local file = self:get_file(file_name, "w+")
+    if not file then return end
+
+    file:write("return " .. fast_print(t))
+    file:close()
+end
+
+--- Read one campaign's settings from its own file.
+---@param index number The campaign's index.
+---@return {saved_mods: table}? #The campaign's settings, or nil if there's no readable file for it.
+function Registry:read_campaign_file(index)
+    local str = self:read_optional_file(self:get_campaign_file_name(index))
+    if not str then return nil end
+
+    local chunk = loadstring(str)
+    local t = chunk and chunk()
+    return is_table(t) and t or nil
+end
+
+--- Move the campaigns in an older registry file into one file each, so a save only rewrites the campaign being played.
+--- The original file is backed up once first, so nothing is lost if an older MCT is used again.
+---@param t table The registry file's contents. Its `campaigns` are emptied.
+---@param str string The registry file's text, for the backup.
+function Registry:move_campaigns_to_files(t, str)
+    if not is_table(t.campaigns) or next(t.campaigns) == nil then return end
+
+    local backup_name = "mct_registry_backup_before_campaign_split.lua"
+    if not self:read_optional_file(backup_name) then
+        local backup = self:get_file(backup_name, "w+")
+        if backup then
+            backup:write(str)
+            backup:close()
+        end
+    end
+
+    local moved = 0
+    for index, campaign in pairs(t.campaigns) do
+        -- index 0 only ever held settings saved outside a campaign, and nothing reads it
+        if is_number(index) and index > 0 and is_table(campaign) then
+            self:write_lua_file(self:get_campaign_file_name(index), campaign)
+            moved = moved + 1
+        end
+    end
+
+    -- kept as an empty table so older MCT versions can still read the file
+    t.campaigns = {}
+
+    logf("Moved %d campaigns out of the registry file into their own files.", moved)
 end
 
 --- TODO split this up into a few sub functions so it's easier to call externally
@@ -873,8 +948,10 @@ function Registry:save_registry_file()
         t.campaigns = {}
     end
 
-    if not t.campaigns[self.__this_campaign] then
-        t.campaigns[self.__this_campaign] = {saved_mods = {}}
+    -- the campaign being played is saved to its own file, so saving doesn't rewrite every campaign
+    local campaign_data
+    if mct:context() == "campaign" and self.__this_campaign > 0 then
+        campaign_data = self:read_campaign_file(self.__this_campaign) or {saved_mods = {}}
     end
 
     logf("Saving the MCT.Registry!")
@@ -893,14 +970,14 @@ function Registry:save_registry_file()
         local this = t.global.saved_mods[mod_key]
         local this_campaign
 
-        if mct:context() == "campaign" then
-            if not t.campaigns[self.__this_campaign].saved_mods[mod_key] then
-                t.campaigns[self.__this_campaign].saved_mods[mod_key] = {
+        if campaign_data then
+            if not campaign_data.saved_mods[mod_key] then
+                campaign_data.saved_mods[mod_key] = {
                     options = {},
                 }
             end
 
-            this_campaign = t.campaigns[self.__this_campaign].saved_mods[mod_key]
+            this_campaign = campaign_data.saved_mods[mod_key]
         end
 
         for option_key, option_obj in pairs(mod_obj:get_options()) do
@@ -984,6 +1061,10 @@ function Registry:save_registry_file()
     self.__file_size = file:seek("cur")
     file:close()
 
+    if campaign_data then
+        self:write_lua_file(self:get_campaign_file_name(self.__this_campaign), campaign_data)
+    end
+
     local et3 = os.clock() - st3
 
     -- logf("Time to build table: %dms", et * 1000)
@@ -1010,11 +1091,9 @@ function Registry:load_campaign_battle()
         return false
     end
 
-    local file = self:get_file(self.__main_file, "r+")
-    if file then
-        local t = loadstring(file:read("*a"))()
-        local this_campaign = t.campaigns[this_campaign_index]
-
+    -- `read_registry_file` runs first, so campaigns from an older registry file have already been moved into their own files
+    local this_campaign = self:read_campaign_file(this_campaign_index)
+    if this_campaign and is_table(this_campaign.saved_mods) then
         for mod_key, mod_data in pairs(this_campaign.saved_mods) do
             local mod_obj = mct:get_mod_by_key(mod_key)
             if mod_obj then
