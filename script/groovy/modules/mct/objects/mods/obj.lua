@@ -1161,7 +1161,6 @@ function mct_mod:create_row(parent)
 
     local txt_uic = find_uicomponent(row, "dy_title")
 
-    txt_uic:Resize(row:Width() - 40, row:Height() * 0.9)
     txt_uic:SetTextXOffset(5, 5)
     txt_uic:SetTextYOffset(0, 0)
 
@@ -1202,6 +1201,9 @@ function mct_mod:create_row(parent)
     button_more_options:SetDockingPoint(6)
     button_more_options:SetDockOffset(-8, 0)
     button_more_options:SetTooltipText("More Options", true)
+
+    -- the title starts a little bit in. Stop it before the "..." button so long titles wrap instead of running under it.
+    txt_uic:Resize(row:Width() - 37 - button_more_options:Width() - 16, row:Height() * 0.9)
 
     if self:is_disabled() then
         row:SetState("inactive")
