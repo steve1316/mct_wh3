@@ -698,6 +698,12 @@ function mct_option:is_radiobutton()
     return self:get_type() == "MCT.Option.RadioButton"
 end
 
+--- Whether this option holds a setting. Types without one, like dummies and actions, override this to return false.
+---@return boolean
+function mct_option:has_setting()
+    return true
+end
+
 --- Internal checker to see if the values passed through mct_option methods are valid.
 --- This remains because I renamed the function to "check_validity" but didn't want to ruin backwards compatibility.
 ---@param val any Value being tested for type.
@@ -917,7 +923,7 @@ function mct_option:ui_create_option_base(parent, w, h)
     end
 
     --- if this is a global option, show the global icon
-    if self:get_type() ~= "MCT.Option.Action" and self:get_type() ~= "MCT.Option.Dummy" then
+    if self:has_setting() then
         if self:is_global() then
             self:set_uic_with_key(
                 "button_global",
