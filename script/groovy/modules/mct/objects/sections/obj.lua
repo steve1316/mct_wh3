@@ -49,6 +49,9 @@ local mct_section_defaults = {
     ---@type MCT.Page.Settings TODO link sections to pages
     _page = nil,
 
+    ---@type number? The Settings page column this section is pinned to. Nil lets the page place it.
+    _column = nil,
+
     ---@type boolean Whether this section can be collapsed
     _is_collapsible = false,
 
@@ -103,6 +106,25 @@ end
 ---@return MCT.Page.Settings
 function mct_section:get_page()
     return self._page
+end
+
+--- Pin this section to a column on its Settings page. Unpinned sections are split evenly across all columns, ignoring the pinned ones.
+---@param column_num number? The column, from 1 (left) to the page's column count. Pass nil to unpin.
+---@return boolean #False if the column number was invalid.
+function mct_section:set_column(column_num)
+    if not is_nil(column_num) and (not is_number(column_num) or column_num < 1 or column_num % 1 ~= 0) then
+        err("set_column() called for section ["..self:get_key().."], but the column provided was not a whole number of 1 or more! Returning false.")
+        return false
+    end
+
+    self._column = column_num
+    return true
+end
+
+--- Get the column this section is pinned to.
+---@return number? #The column number, or nil if the page places this section.
+function mct_section:get_column()
+    return self._column
 end
 
 --- Set an option key at a specific index, for the @{mct_section:get_ordered_options} function.
