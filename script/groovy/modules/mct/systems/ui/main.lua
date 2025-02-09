@@ -54,6 +54,9 @@ local UI_Main = {
 
 local mct = get_mct()
 
+---@type MCT.UI.Spacing
+local spacing = GLib.LoadModule("spacing", this_path)
+
 -- --- TODO load these elsewhere!
 -- local ui_path = "script/vlib/mct/core/ui/"
 
@@ -862,6 +865,28 @@ function UI_Main:new_option_row_at_pos(option_obj, this_layout, w, h)
     option_obj:ui_create_option_base(this_layout, w, h)
 
     return w,h
+end
+
+--- Get the spacing used to lay out the Settings page.
+---@return MCT.UI.Spacing
+function UI_Main:get_spacing()
+    return spacing
+end
+
+--- Create an empty spacer of a fixed size, for padding inside lists and sections.
+---@param parent UIC The component to create the spacer in.
+---@param id string The spacer's id.
+---@param width number
+---@param height number
+---@return UIC #The spacer.
+function UI_Main:create_spacer(parent, id, width, height)
+    local spacer = core:get_or_create_component(id, "ui/campaign ui/script_dummy", parent)
+    spacer:Resize(width, height, false)
+
+    -- lock the size, so a parent resize can't stretch it
+    spacer:SetCanResizeWidth(false) spacer:SetCanResizeHeight(false)
+
+    return spacer
 end
 
 core:declare_lookup_listener("component_click_up", "ComponentLClickUp", function(context) return context.component end)
