@@ -219,6 +219,9 @@ function Slider:ui_create_option(dummy_parent)
     text_input:SetCanResizeWidth(false)
     text_input:SetInteractive(true)
 
+    -- as tall as the arrow buttons, so the row lines up with what's drawn. Docking below places the parts against this height.
+    slider_parent:Resize(slider_parent:Width(), math.max(right_button:Height(), text_input:Height()), false)
+
     right_button:SetDockingPoint(6)
     text_input:SetDockingPoint(5)
     left_button:SetDockingPoint(4)

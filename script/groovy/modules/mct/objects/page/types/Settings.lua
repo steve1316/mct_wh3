@@ -180,6 +180,18 @@ function SettingsPage:assign_columns(sections)
     return columns
 end
 
+--- The width for rows in a column. Rows stop at the column's scrollbar, so their content keeps the same inset on the right as on the left.
+---@param column UIC The column's list view.
+---@return number
+function SettingsPage:get_row_width(column)
+    local scrollbar = find_uicomponent(column, "vslider")
+    if not scrollbar then return column:Width() end
+
+    -- the scrollbar docks to the right edge, pulled in by its dock offset
+    local offset_x = scrollbar:GetDockOffset()
+    return column:Width() - scrollbar:Width() + offset_x
+end
+
 ---@param panel UIC
 function SettingsPage:populate(panel)
     local sections = self:sort_sections()
@@ -250,11 +262,13 @@ function SettingsPage:populate(panel)
     for column_num, column_sections in ipairs(self:assign_columns(sections)) do
         local column = find_uicomponent(panel, "settings_column_"..column_num)
         local box = find_uicomponent(column, "list_clip", "list_box")
+        local row_w = self:get_row_width(column)
 
         for i, section_obj in ipairs(column_sections) do
             GLib.Log("Assigning section %s to column %d", section_obj:get_key(), column_num)
 
-            section_obj:populate(box, column:Width() * 0.95, column:Height() * 0.12)
+            -- rows span the column up to its scrollbar and inset their own content, since the column's list puts every child at its left edge
+            section_obj:populate(box, row_w, column:Height() * 0.12)
 
             if i < #column_sections then
                 -- create a horizontal divider!

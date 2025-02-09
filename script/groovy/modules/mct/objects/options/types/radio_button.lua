@@ -20,7 +20,6 @@ local defaults = {
     _layout = "horizontal",
 
     _control_dock_point = 8,
-    _control_dock_offset = {0, 0},
 
 }
 

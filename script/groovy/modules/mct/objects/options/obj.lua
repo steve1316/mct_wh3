@@ -13,6 +13,9 @@ local Registry = mct:get_registry()
 
 local log,logf,err,errf = get_vlog("[mct]")
 
+--- `_control_dock_point` for a control under the label, like radio buttons.
+local ROW_BELOW = 8
+
 ---@class MCT.Option
 local mct_option_defaults = {
     ---@type MCT.Mod The owning mod object.
@@ -78,8 +81,8 @@ local mct_option_defaults = {
     ---@type boolean Whether this option has its settings stored globally or within independent campaigns.
     _is_global = false,
 
-    _control_dock_point = 6, -- the dock point for the control
-    _control_dock_offset = {0, 0} -- the dock position for the control
+    ---@type number The row layout for `ui_layout_row`: 5 for a full-width control with no label, 8 for under the label, else beside it.
+    _control_dock_point = 6,
 }
 
 ---@class MCT.Option : Class
@@ -843,42 +846,11 @@ function mct_option:ui_create_option_base(parent, w, h)
 
     self:set_uic_with_key("text", option_text, true)
 
-    local n_w = new_option:Width()
-    local t_w = dummy_option:Width()
-    local oh = dummy_option:Height() * 0.95
-
-    if self._control_dock_point == 6 then
-        -- standard
-
-        -- resize the text so it takes up the space of the dummy column that is not used by the option
-        local ow = t_w - n_w - 35 -- -25 is for some spacing! -15 for the offset, -10 for spacing between the option to the right
-        
-        option_text:Resize(ow, oh)
-        option_text:SetTextVAlign("centre")
-        option_text:SetTextHAlign("left")
-        option_text:SetTextXOffset(5, 0)
-
-        option_text:ResizeTextResizingComponentToInitialSize(ow, oh)
-
-        option_text:SetStateText(self:get_text())
-    elseif self._control_dock_point == 8 then
-        -- radio buttons, for now.
-
-        local ow, oh = t_w * 0.4, oh/2
-        option_text:Resize(ow, oh)
-        option_text:SetTextVAlign("centre")
-        option_text:SetTextHAlign("left")
-        option_text:SetTextXOffset(5, 0)
-
-        option_text:ResizeTextResizingComponentToInitialSize(ow, oh)
-        option_text:SetStateText(self:get_text())
-
-        option_text:SetDockingPoint(1)
-        option_text:SetDockOffset(15, 0)
-    end
-
-    new_option:SetDockingPoint(self._control_dock_point)
-    new_option:SetDockOffset(self._control_dock_offset[1], self._control_dock_offset[2])
+    -- the label's size and the control's position are set by `ui_layout_row`, once the icons exist
+    option_text:SetTextVAlign("centre")
+    option_text:SetTextHAlign("left")
+    option_text:SetTextXOffset(0, 0)
+    option_text:SetStateText(self:get_text())
 
     --- TODO absolutely don't handle this here
     -- read if the option is read-only in campaign (and that we're in campaign)
@@ -1023,12 +995,88 @@ function mct_option:ui_create_option_base(parent, w, h)
     )
 
     
-    if self._control_dock_point == 8 then
-        icon_holder:SetDockingPoint(1)
-        icon_holder:SetDockOffset(option_text:Width() + 10, option_text:Height() / 2 - icon_holder:Height() / 2) -- will prolly look bad for now.
-    end
+    self:ui_layout_row(dummy_option, option_text, new_option, icon_holder)
 
     self:ui_refresh()
+end
+
+--- How tall the first line of this option's control is. The label line is at least this tall, and the control centres on it.
+--- Types whose control stacks several lines override this.
+---@param control UIC The control returned by `ui_create_option`.
+---@return number
+function mct_option:ui_get_control_line_height(control)
+    return control:Height()
+end
+
+--- The space above and below this row's content. Types that sit closer to their neighbours override this.
+---@return number
+function mct_option:ui_get_padding_y()
+    return mct:get_ui():get_spacing().row_pad_y
+end
+
+--- The width between a row's side padding, where its label and control go.
+---@param row UIC The option row.
+---@return number
+function mct_option:ui_get_content_width(row)
+    return row:Width() - mct:get_ui():get_spacing().inset_x * 2
+end
+
+--- Size and place a row's label, icons, and control from the UI spacing table, then fit the row's height to them.
+--- Every row gets the same padding above and below its content, so the gaps between rows match.
+---@param row UIC The option row.
+---@param label UIC The option's label.
+---@param control UIC The control returned by `ui_create_option`.
+---@param icons UIC The holder for the icons under the label.
+function mct_option:ui_layout_row(row, label, control, icons)
+    local spacing = mct:get_ui():get_spacing()
+    local row_w = row:Width()
+    local content_w = self:ui_get_content_width(row)
+    local pad = self:ui_get_padding_y()
+    local dock = self._control_dock_point
+
+    -- controls under the label, like radio buttons, leave room beside the label for its icons
+    local label_w = dock == ROW_BELOW and content_w * 0.6 or content_w - control:Width() - spacing.label_gap
+    label:SetCanResizeWidth(true) label:SetCanResizeHeight(true)
+    label:Resize(label_w, label:Height())
+
+    local text_w, text_h = label:TextDimensionsForText(self:get_text())
+    local line_h = math.max(spacing.label_line_h, text_h)
+    local control_line_h = self:ui_get_control_line_height(control)
+    if dock ~= ROW_BELOW then
+        line_h = math.max(line_h, control_line_h)
+    end
+
+    label:Resize(label_w, line_h)
+    label:ResizeTextResizingComponentToInitialSize(label_w, line_h)
+    label:SetCanResizeWidth(false) label:SetCanResizeHeight(false)
+
+    local control_x, control_y, bottom
+    if dock == ROW_BELOW then
+        control_x, control_y = spacing.inset_x, pad + line_h + spacing.list_gap
+        bottom = control_y + control:Height()
+    else
+        local has_icons = self:has_setting() or self:get_tooltip_text() ~= ""
+        control_x, control_y = -spacing.inset_x, pad + (line_h - control_line_h) / 2
+        bottom = math.max(pad + line_h + (has_icons and spacing.icons_gap + spacing.icons_h or 0), control_y + control:Height())
+    end
+
+    -- resize before docking, so everything docks against the final height
+    row:SetCanResizeHeight(true)
+    row:Resize(row_w, bottom + pad, false)
+    row:SetCanResizeHeight(false)
+
+    label:SetDockingPoint(1)
+    label:SetDockOffset(spacing.inset_x, pad)
+
+    control:SetDockingPoint(dock == ROW_BELOW and 1 or 3)
+    control:SetDockOffset(control_x, control_y)
+
+    icons:SetDockingPoint(1)
+    if dock == ROW_BELOW then
+        icons:SetDockOffset(math.min(text_w, label_w) + 10, (line_h - spacing.icons_h) / 2)
+    else
+        icons:SetDockOffset(spacing.icons_indent, line_h + spacing.icons_gap)
+    end
 end
 
 --- set the state, value, visibility, and actions (ie. revert to defaults)
