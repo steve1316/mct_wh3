@@ -873,6 +873,24 @@ function UI_Main:get_spacing()
     return spacing
 end
 
+--- Create a thin parchment divider line, centered in its parent.
+---@param parent UIC The component to draw the divider in.
+---@param width number The width of the line.
+---@return UIC #The divider image.
+function UI_Main:create_divider_image(parent, width)
+    local div = core:get_or_create_component("divider", "ui/groovy/image", parent)
+    div:SetDockingPoint(5)
+    div:Resize(width, spacing.divider_h, false)
+    div:SetImagePath("ui/skins/default/parchment_divider_length.png", 0)
+    div:SetCurrentStateImageTiled(0, true)
+    div:SetCurrentStateImageMargins(0, 2, 0, 2, 0)
+
+    -- lock the size like the option rows, so a parent resize can't stretch the tiled image into a second line
+    div:SetCanResizeWidth(false) div:SetCanResizeHeight(false)
+
+    return div
+end
+
 --- Create an empty spacer of a fixed size, for padding inside lists and sections.
 ---@param parent UIC The component to create the spacer in.
 ---@param id string The spacer's id.

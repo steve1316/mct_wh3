@@ -195,6 +195,8 @@ end
 ---@param panel UIC
 function SettingsPage:populate(panel)
     local sections = self:sort_sections()
+    local ui = get_mct():get_ui()
+    local spacing = ui:get_spacing()
 
     --- TODO do the "pull into page" on the MCT.Mod level - grab any orphaned sections and toss them into main?
     --- TODO this should pull all sections that don't have a page already; right now this will pull all sections everywhere
@@ -255,9 +257,15 @@ function SettingsPage:populate(panel)
         GLib.Log("Docking point for column %d is %d", i, docking_point)
 
         column:SetDockingPoint(docking_point)
+
+        -- top padding, so the first section isn't flush against the page title
+        ui:create_spacer(column_box, "padding_top", column:Width(), spacing.column_pad_top)
     end
 
     local div_num = 0
+
+    -- equal space above and below each divider between sections. The last row above already brings its own bottom padding.
+    local div_above = math.max(0, spacing.section_gap - spacing.row_pad_y)
 
     for column_num, column_sections in ipairs(self:assign_columns(sections)) do
         local column = find_uicomponent(panel, "settings_column_"..column_num)
@@ -273,16 +281,11 @@ function SettingsPage:populate(panel)
             if i < #column_sections then
                 -- create a horizontal divider!
                 div_num = div_num + 1
-                local div_holder = core:get_or_create_component("divider_holder_"..div_num, "ui/campaign ui/script_dummy", box)
-                div_holder:Resize(box:Width(), 13)
 
-                
-                local div = core:get_or_create_component("divider", "ui/groovy/image", div_holder)
-                div:SetDockingPoint(5)
-                div:Resize(div_holder:Width() - 10, 13)
-                div:SetImagePath("ui/skins/default/parchment_divider_length.png", 0)
-                div:SetCurrentStateImageTiled(0, true)
-                div:SetCurrentStateImageMargins(0, 2, 0, 2, 0)
+                local div_holder = ui:create_spacer(box, "divider_holder_"..div_num, row_w, div_above + spacing.divider_h + spacing.section_gap)
+                local div = ui:create_divider_image(div_holder, row_w - spacing.inset_x * 2)
+                div:SetDockingPoint(2)
+                div:SetDockOffset(0, div_above)
             end
         end
     end
@@ -294,11 +297,13 @@ function SettingsPage:populate(panel)
             local clip = find_uicomponent(column, "list_clip")
             local box = find_uicomponent(clip, "list_box")
 
+            ui:create_spacer(box, "padding_bottom", column:Width(), spacing.column_pad_bottom)
+
+            -- don't resize children. They're already sized for the column, and scaling them up from the template size stretches the dividers.
+            clip:Resize(column:Width(), column:Height(), false)
+            box:Resize(column:Width(), column:Height(), false)
+
             box:Layout()
-
-            clip:Resize(column:Width(), column:Height())
-            box:Resize(column:Width(), column:Height())
-
         end
     end
 
