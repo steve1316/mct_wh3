@@ -13,6 +13,9 @@ local Registry = mct:get_registry()
 
 local log,logf,err,errf = get_vlog("[mct]")
 
+--- `_control_dock_point` for a control that spans the row's content with no label, like dividers.
+local ROW_FULL = 5
+
 --- `_control_dock_point` for a control under the label, like radio buttons.
 local ROW_BELOW = 8
 
@@ -1033,6 +1036,21 @@ function mct_option:ui_layout_row(row, label, control, icons)
     local content_w = self:ui_get_content_width(row)
     local pad = self:ui_get_padding_y()
     local dock = self._control_dock_point
+
+    -- a control with no label, like a divider, only gets its own padding around it. An empty label would show "No text assigned".
+    if dock == ROW_FULL then
+        label:SetStateText("")
+        -- its icons would float over the control, so they're hidden. A type can show its tooltip on the control instead.
+        icons:SetVisible(false)
+
+        row:SetCanResizeHeight(true)
+        row:Resize(row_w, pad * 2 + control:Height(), false)
+        row:SetCanResizeHeight(false)
+
+        control:SetDockingPoint(5)
+        control:SetDockOffset(0, 0)
+        return
+    end
 
     -- controls under the label, like radio buttons, leave room beside the label for its icons
     local label_w = dock == ROW_BELOW and content_w * 0.6 or content_w - control:Width() - spacing.label_gap

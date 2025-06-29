@@ -35,6 +35,9 @@ return {
     ---@type number Space between a label and a control drawn under it.
     list_gap = 6,
 
+    ---@type number Space above and below a divider option, used instead of `row_pad_y`.
+    divider_pad_y = 4,
+
     ---@type number Space above and below the divider between sections.
     section_gap = 16,
 
