@@ -1,4 +1,4 @@
---- MCT text type. A block of text across the whole row, with a choice of style. Holds no setting.
+--- MCT text type. A block of text across the whole row, with a choice of style and alignment. Holds no setting.
 --- Set the text with `set_text`. The game's colour tags work in every style, like `[[col:yellow]]Gold[[/col]]`.
 
 local mct = get_mct()
@@ -22,6 +22,9 @@ local STYLE_TEMPLATES = {
 local defaults = {
     ---@type "body"|"bold"|"italic"|"faded"|"subheading"|"heading" How the text is drawn. Set with `text_set_style`.
     _style = "body",
+
+    ---@type "left"|"centre"|"right" Where the text sits in the row. Set with `text_set_alignment`.
+    _alignment = "left",
 
     ---@type number The row layout: full width with no label, so the row fits the text.
     _control_dock_point = 5,
@@ -50,6 +53,23 @@ function Text:text_get_style()
     return self._style
 end
 
+--- Set where the text sits in the row. Only read when the text is created in the UI.
+---@param alignment "left"|"centre"|"center"|"right"
+---@return MCT.Option.Text|false
+function Text:text_set_alignment(alignment)
+    local name = self:check_alignment(alignment, "text_set_alignment")
+    if not name then return false end
+
+    self._alignment = name
+    return self
+end
+
+--- Get where the text sits in the row.
+---@return "left"|"centre"|"right"
+function Text:text_get_alignment()
+    return self._alignment
+end
+
 --- Create the text across the row's content, wrapping long text. The row's height is set by `ui_layout_row`.
 ---@param dummy_parent UIC The option row.
 ---@return UIC #The text.
@@ -60,7 +80,7 @@ function Text:ui_create_option(dummy_parent)
     local text_uic = core:get_or_create_component("mct_text", STYLE_TEMPLATES[self._style], dummy_parent)
     text_uic:SetCanResizeWidth(true) text_uic:SetCanResizeHeight(true)
     text_uic:Resize(width, text_uic:Height())
-    text_uic:SetTextHAlign("left")
+    text_uic:SetTextHAlign(self._alignment)
     text_uic:SetTextVAlign("top")
     text_uic:SetTextXOffset(0, 0)
     text_uic:SetTextYOffset(0, 0)

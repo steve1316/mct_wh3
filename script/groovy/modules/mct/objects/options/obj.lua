@@ -19,6 +19,9 @@ local ROW_FULL = 5
 --- `_control_dock_point` for a control under the label, like radio buttons.
 local ROW_BELOW = 8
 
+--- Alignment names, mapped to the one each means. "center" is accepted as well as "centre".
+local ALIGNMENTS = {left = "left", centre = "centre", center = "centre", right = "right"}
+
 ---@class MCT.Option
 local mct_option_defaults = {
     ---@type MCT.Mod The owning mod object.
@@ -655,6 +658,20 @@ function mct_option:set_selected_setting(val, is_from_popup)
         -- run the callback, passing the mct_option along as an arg
         self:process_callback()
     end]]
+end
+
+--- Check an alignment name, logging an error if it isn't one.
+---@param alignment any The alignment name: "left", "centre", "center", or "right".
+---@param caller string The setter's name, for the error.
+---@return "left"|"centre"|"right"|false #The alignment, with "center" read as "centre", or false if it isn't valid.
+function mct_option:check_alignment(alignment, caller)
+    local name = ALIGNMENTS[alignment]
+    if not name then
+        err(caller.."() called for option ["..self:get_key().."], but the alignment ["..tostring(alignment).."] is not left, centre, or right! Returning false.")
+        return false
+    end
+
+    return name
 end
 
 ---- Manually set the x/y position for this option, within its section.
