@@ -57,6 +57,15 @@ local mct = get_mct()
 ---@type MCT.UI.Spacing
 local spacing = GLib.LoadModule("spacing", this_path)
 
+--- The name MCT registers its ESC key callback under, while the panel is open.
+local ESCAPE_KEY_NAME = "mct_close_on_escape"
+
+--- Get the game manager that can steal the ESC key: `cm` in campaign, `bm` in battle. The main menu has none.
+---@return table?
+local function get_escape_key_manager()
+    return cm or bm
+end
+
 -- --- TODO load these elsewhere!
 -- local ui_path = "script/vlib/mct/core/ui/"
 
@@ -476,6 +485,13 @@ function UI_Main:open_frame(provided_panel, is_pre_campaign)
     -- clear notifications + trigger any stashed popups
     self:trigger_stashed_popups()
 
+    -- ESC closes MCT like its X button, in campaign and battle where MCT is a popup. In the main menu, ESC already leaves the screen.
+    local key_manager = get_escape_key_manager()
+    if key_manager and not is_pre_campaign then
+        key_manager:release_escape_key_with_callback(ESCAPE_KEY_NAME)
+        key_manager:steal_escape_key_with_callback(ESCAPE_KEY_NAME, function() self:close_and_save() end)
+    end
+
     core:trigger_custom_event("MctPanelOpened", {["mct"] = mct, ["ui_obj"] = self})
 
 end) if not ok then logerr(msg) end
@@ -484,6 +500,12 @@ end
 
 function UI_Main:close_frame(already_dead)
     if not already_dead then delete_component(self.panel) end
+
+    -- give ESC back to the game, so it opens the pause menu again
+    local key_manager = get_escape_key_manager()
+    if key_manager then
+        key_manager:release_escape_key_with_callback(ESCAPE_KEY_NAME)
+    end
 
     --core:remove_listener("left_or_right_pressed")
     core:remove_listener("MctRowClicked")
@@ -977,6 +999,16 @@ function UI_Main:create_mct_button(parent, x, y)
     return mct_button
 end
 
+--- Save any changed settings, then close the panel. Used by the X button and the ESC key.
+function UI_Main:close_and_save()
+    -- check if MCT was finalized or no changes were done during the latest UI operation
+    if mct:get_registry():has_pending_changes() then
+        mct:finalize()
+    end
+
+    self:close_frame()
+end
+
 core:add_listener(
     "mct_close_button_pressed",
     "ComponentLClickUp",
@@ -984,14 +1016,7 @@ core:add_listener(
         return context.string == "button_mct_close" and uicomponent_descended_from(UIComponent(context.component), "mct_options")
     end,
     function(context)
-        -- check if MCT was finalized or no changes were done during the latest UI operation       
-        if mct:get_registry():has_pending_changes() then
-            -- if Settings.__settings_changed then
-                mct:finalize()
-            -- end
-        end
-        
-        UI_Main:close_frame()
+        UI_Main:close_and_save()
     end,
     true
 )
