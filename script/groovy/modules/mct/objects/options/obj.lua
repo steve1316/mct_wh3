@@ -87,6 +87,9 @@ local mct_option_defaults = {
     ---@type boolean Whether this option has its settings stored globally or within independent campaigns.
     _is_global = false,
 
+    ---@type (fun(value:any):boolean,string?)[] Tests every new selected setting must pass. See `add_validity_test`.
+    _validity_callbacks = {},
+
     ---@type number The row layout for `ui_layout_row`: 5 for a full-width control with no label, 8 for under the label, else beside it.
     _control_dock_point = 6,
 }
@@ -634,6 +637,13 @@ function mct_option:set_selected_setting(val, is_from_popup)
         return
     end
 
+    -- a failed validity test keeps the current value
+    local test = self:run_validity_tests(val)
+    if test ~= true then
+        self:ui_refresh()
+        return false
+    end
+
     logf("Changing option %s of type %q to val %s", self:get_key(), self:get_type(), tostring(val))
 
     --- If we have a confirmation popup, abort the operation and go through that. 
@@ -660,6 +670,26 @@ function mct_option:set_selected_setting(val, is_from_popup)
     end]]
 end
 
+--- Add a test that every new value picked for this option must pass. A failed test keeps the current value.
+---@param callback fun(value:any):boolean,string? Takes the new value. Return true if it's valid, or false and a message explaining why not.
+---@usage    option:add_validity_test(
+---               function(value)
+---                     if value == "bloop" then
+---                         return false, "Bloop is unallowed."
+---                     else
+---                         return true
+---                     end
+---                end
+---            )
+function mct_option:add_validity_test(callback)
+    if not is_function(callback) then
+        err("add_validity_test() called on mct_option ["..self:get_key().."], but the callback provided is not a valid function!")
+        return false
+    end
+
+    self._validity_callbacks[#self._validity_callbacks+1] = callback
+end
+
 --- Check an alignment name, logging an error if it isn't one.
 ---@param alignment any The alignment name: "left", "centre", "center", or "right".
 ---@param caller string The setter's name, for the error.
@@ -672,6 +702,20 @@ function mct_option:check_alignment(alignment, caller)
     end
 
     return name
+end
+
+--- Run every test added with `add_validity_test` against a value.
+---@param value any The value to test.
+---@return true|string #True if every test passed, or the first failed test's message.
+function mct_option:run_validity_tests(value)
+    for _, callback in ipairs(self._validity_callbacks) do
+        local valid, errmsg = callback(value)
+        if valid == false then
+            return errmsg or "This value isn't allowed."
+        end
+    end
+
+    return true
 end
 
 ---- Manually set the x/y position for this option, within its section.

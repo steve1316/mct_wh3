@@ -386,34 +386,37 @@ function Slider:slider_set_min_max(min, max)
 end
 
 
---- this is the tester function for supplied text into the string.
---- checks if it's a number; if it's valid within precision; if it's valid within min/max
-function Slider:test_text(text)
-    text = tonumber(text)
-    if not is_number(text) then
+--- Read typed text as a number between two bounds, in this slider's precision.
+---@param text any The typed text.
+---@param lowest number The lowest allowed number.
+---@param highest number The highest allowed number.
+---@return number|string #The number, or the error message to show.
+function Slider:read_typed_number(text, lowest, highest)
+    local num = tonumber(text)
+    if not is_number(num) then
         return "Not a valid number!"
     end
 
-    local values = self:get_values()
-    local min = values.min
-    local max = values.max
-    local current = self:get_selected_setting()
-    local precision = values.precision
-
-    if text > max then
-        return "This value is over the maximum of ["..tostring(max).."]."
-    elseif text < min then
-        return "This value is under the minimum of ["..tostring(min).."]."
-    else
-        -- check for the precision
-        local tester = self:slider_get_precise_value(text, false)
-        if text ~= tester then
-            return "This value isn't in valid precision! It expects ["..tostring(precision).."] decimal points."
-        end
+    if num > highest then
+        return "This value is over the maximum of ["..tostring(highest).."]."
+    elseif num < lowest then
+        return "This value is under the minimum of ["..tostring(lowest).."]."
+    elseif num ~= self:slider_get_precise_value(num, false) then
+        return "This value isn't in valid precision! It expects ["..tostring(self:get_values().precision).."] decimal points."
     end
 
-    -- nothing returned a string - return true for valid!
-    return true
+    return num
+end
+
+--- Test typed text. Checks it's a number within min/max and precision, then runs the tests added with `add_validity_test`.
+---@param text any The typed text.
+---@return true|string #True if valid, or the error message to show.
+function Slider:test_text(text)
+    local values = self:get_values()
+    local num = self:read_typed_number(text, values.min, values.max)
+    if is_string(num) then return num end
+
+    return self:run_validity_tests(num)
 end
 
 ---------- List'n'rs -------------

@@ -5,9 +5,6 @@ local Super = mct:get_mct_option_class()
 ---@class MCT.Option.TextInput
 local defaults = {
     _template = "ui/common ui/text_box",
-
-    ---@type fun(text:string)[]
-    _validity_callbacks = {}
 }
 
 ---@class MCT.Option.TextInput : MCT.Option
@@ -124,47 +121,15 @@ end
 --------- UNIQUE SECTION -----------
 -- These functions are unique for this type only. Be careful calling these!
 
---- add a test for validity with several returns.
----@param callback fun(t:string):boolean,string? The function to pass. Takes the text as a parameter. Return "true" for valid tests, and return false for invalid, optionally passing a string for the string that will be displayed in the popup to explain to the user why that text is unallowed.
---- @usage    wrapped_type:add_validity_test(
----               function(text)
----                     if text == "bloop" then
----                         return false, "Bloop is unallowed."
----                     else
----                         return true
----                     end
----                end
----            )
-function TextInput:add_validity_test(callback)
-    if not is_function(callback) then
-        err("add_validity_test() called on mct_option ["..self:get_key().."], but the callback provided is not a valid function!")
-        return false
-    end
-
-
-    self._validity_callbacks[#self._validity_callbacks+1] = callback
-end
-
---- this is the tester function for supplied text into the string.
---- loops through every validity 
+--- Test typed text against the validity tests added with `add_validity_test`.
+---@param text any The typed text.
+---@return true|string #True if valid, or the error message to show.
 function TextInput:test_text(text)
     if not is_string(text) then
         return "Not a valid string"
     end
 
-    local callbacks = self._validity_callbacks
-
-    for i = 1, #callbacks do
-        local callback = callbacks[i]
-        local valid,errmsg = callback(text)
-
-        if valid == false then
-            return errmsg
-        end
-    end
-
-    -- nothing returned a string - return true for valid!
-    return true
+    return self:run_validity_tests(text)
 end
 
 ---------- List'n'rs -------------
