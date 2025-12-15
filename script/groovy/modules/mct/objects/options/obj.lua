@@ -22,6 +22,12 @@ local ROW_BELOW = 8
 --- Alignment names, mapped to the one each means. "center" is accepted as well as "centre".
 local ALIGNMENTS = {left = "left", centre = "centre", center = "centre", right = "right"}
 
+--- The listener that commits the watched text box when it's clicked out of. Only one text box is watched at a time.
+local TEXT_INPUT_RELEASED = "mct_text_input_released"
+
+--- The timer key for the watched text box, or nil when none is watched.
+local watched_text_input_key = nil
+
 ---@class MCT.Option
 local mct_option_defaults = {
     ---@type MCT.Mod The owning mod object.
@@ -89,6 +95,9 @@ local mct_option_defaults = {
 
     ---@type (fun(value:any):boolean,string?)[] Tests every new selected setting must pass. See `add_validity_test`.
     _validity_callbacks = {},
+
+    ---@type string? The error showing beside the icons. Set with `ui_set_error`.
+    _error_msg = nil,
 
     ---@type number The row layout for `ui_layout_row`: 5 for a full-width control with no label, 8 for under the label, else beside it.
     _control_dock_point = 6,
@@ -421,9 +430,10 @@ function mct_option:set_uic_visibility(visibility, keep_in_ui)
 
     for key, uic in pairs(uic_table) do
         if is_uicomponent(uic) then
-            -- the visibility of these two are determined elsewhere.
-            if key ~= "error_popup" and key ~= "border" then
-                uic:SetVisible(self:get_uic_visibility())
+            -- the row and border visibility are determined elsewhere. The error line is only shown by `ui_set_error`, but hides with the option.
+            local visible = self:get_uic_visibility()
+            if key ~= "row" and key ~= "border" and (key ~= "error_line" or not visible) then
+                uic:SetVisible(visible)
             end
         end
     end
@@ -637,8 +647,9 @@ function mct_option:set_selected_setting(val, is_from_popup)
         return
     end
 
-    -- a failed validity test keeps the current value
+    -- a failed validity test keeps the current value, and shows why beside the option's icons
     local test = self:run_validity_tests(val)
+    self:ui_set_error(test)
     if test ~= true then
         self:ui_refresh()
         return false
@@ -670,7 +681,8 @@ function mct_option:set_selected_setting(val, is_from_popup)
     end]]
 end
 
---- Add a test that every new value picked for this option must pass. A failed test keeps the current value.
+--- Add a test that every new value picked for this option must pass. A failed test keeps the current value and shows its message in red
+--- beside the option's icons.
 ---@param callback fun(value:any):boolean,string? Takes the new value. Return true if it's valid, or false and a message explaining why not.
 ---@usage    option:add_validity_test(
 ---               function(value)
@@ -716,6 +728,105 @@ function mct_option:run_validity_tests(value)
     end
 
     return true
+end
+
+--- Show an error in red beside this option's icons, or hide it. Does nothing if the option isn't in the UI.
+---@param msg any The error to show. Anything that isn't a string, like nil or a passed test's `true`, hides it.
+function mct_option:ui_set_error(msg)
+    if not is_string(msg) then msg = nil end
+
+    -- skip repeats, so the text box watcher doesn't lay the row out again every tick
+    local line = self:get_uic_with_key("error_line")
+    if line and msg == self._error_msg then return end
+    self._error_msg = msg
+
+    if not msg then
+        if line then
+            line:SetVisible(false)
+            UIComponent(line:Parent()):Layout()
+        end
+        return
+    end
+
+    if not line then
+        local row = self:get_uic_with_key("row")
+        local text_uic = self:get_uic_with_key("text")
+        if not row or not text_uic then return end
+
+        -- added to the row's icon list, so it sits inside the row on the line under the label, right after whichever icons are showing
+        local icons_holder = find_uicomponent(text_uic, "icons_holder")
+        if not icons_holder then return end
+
+        line = core:get_or_create_component("error_line", "ui/groovy/text/fe_default", icons_holder)
+        line:SetCanResizeWidth(true) line:SetCanResizeHeight(true)
+        line:Resize(row:Width() * 0.6, 20)
+        line:SetCanResizeWidth(false) line:SetCanResizeHeight(false)
+        line:SetTextHAlign("left")
+        line:SetTextVAlign("centre")
+
+        self:set_uic_with_key("error_line", line, true)
+    end
+
+    line:SetStateText("[[col:red]]" .. msg .. "[[/col]]")
+    line:SetVisible(true)
+    UIComponent(line:Parent()):Layout()
+end
+
+--- Watch a text box while it's clicked into. Its text is tested whenever it changes, with any error shown beside the icons. Clicking
+--- anywhere else commits valid text, or puts the pending value back and keeps the error up.
+---@param text_input UIC The clicked text box.
+---@param test fun(text:string):true|string Tests the typed text. Returns true, or the error to show.
+---@param commit fun(text:string) Sets the option from valid typed text.
+function mct_option:ui_watch_text_input(text_input, test, commit)
+    mct_option.ui_stop_text_input_watch()
+
+    local callback_key = "mct_text_input_" .. self:get_mod_key() .. "_" .. self:get_key()
+    local last_text = nil
+    watched_text_input_key = callback_key
+
+    core:get_tm():repeat_real_callback(function()
+        if not is_uicomponent(text_input) then
+            mct_option.ui_stop_text_input_watch()
+            return
+        end
+
+        local text = text_input:GetStateText()
+        if text ~= last_text then
+            last_text = text
+            self:ui_set_error(test(text))
+        end
+    end, 50, callback_key)
+
+    core:add_listener(
+        TEXT_INPUT_RELEASED,
+        "ComponentLClickUp",
+        function(context)
+            return UIComponent(context.component) ~= text_input
+        end,
+        function()
+            mct_option.ui_stop_text_input_watch()
+
+            local text = text_input:GetStateText()
+            local valid = test(text)
+            if valid == true then
+                commit(text)
+            else
+                self:ui_select_value(self:get_selected_setting())
+                self:ui_set_error(valid)
+            end
+        end,
+        false
+    )
+end
+
+--- Stop watching the text box set with `ui_watch_text_input`, if any. Called before the panel closes or a page is redrawn.
+function mct_option.ui_stop_text_input_watch()
+    if watched_text_input_key then
+        core:get_tm():remove_real_callback(watched_text_input_key)
+        watched_text_input_key = nil
+    end
+
+    core:remove_listener(TEXT_INPUT_RELEASED)
 end
 
 ---- Manually set the x/y position for this option, within its section.
@@ -873,6 +984,8 @@ function mct_option:ui_create_option_base(parent, w, h)
 
     dummy_option:SetProperty("mct_option", self:get_key())
     dummy_option:SetProperty("mct_mod", self:get_mod_key())
+
+    self:set_uic_with_key("row", dummy_option, true)
 
     --- Create the border if necessary
     local dummy_border = core:get_or_create_component("border", "ui/groovy/image", dummy_option)

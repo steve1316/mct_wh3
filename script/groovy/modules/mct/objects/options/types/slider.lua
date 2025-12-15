@@ -191,29 +191,6 @@ function Slider:ui_create_option(dummy_parent)
     local left_button = core:get_or_create_component("left_button", left_button_template, slider_parent)
     local right_button = core:get_or_create_component("right_button", right_button_template, slider_parent)
 
-    local error_popup = core:get_or_create_component("error_popup", "ui/common ui/tooltip_text_only", dummy_parent)
-    error_popup:SetDockingPoint(1)
-    error_popup:SetCanResizeHeight(true)
-    error_popup:Resize(error_popup:Width(), error_popup:Height() * 2)
-    error_popup:SetCanResizeHeight(false
-)
-    error_popup:SetDockOffset(-15, -error_popup:Height())
-    error_popup:RemoveTopMost()
-
-    local t = find_uicomponent(error_popup, "text")
-    t:SetStateText("")
-    t:SetTextHAlign("centre")
-    t:SetTextVAlign("top")
-    t:SetDockingPoint(2)
-    t:SetDockOffset(0, 12)
-    t:SetTextXOffset(0, 0)
-    t:SetTextYOffset(0, 0)
-    t:Resize(error_popup:Width(), error_popup:Height() * 0.6)
-
-    core:get_tm():real_callback(function()
-        error_popup:SetVisible(false)
-    end, 1, nil)
-
     text_input:SetCanResizeWidth(true)
     text_input:Resize(slider_parent:Width() - right_button:Width() * 2, text_input:Height())
     text_input:SetCanResizeWidth(false)
@@ -236,7 +213,6 @@ function Slider:ui_create_option(dummy_parent)
     self:set_uic_with_key("option", text_input, true)
     self:set_uic_with_key("left_button", left_button, true)
     self:set_uic_with_key("right_button", right_button, true)
-    self:set_uic_with_key("error_popup", error_popup, true)
 
     return slider_parent
 end
@@ -452,65 +428,18 @@ core:add_listener(
         left_button:SetState("inactive")
         right_button:SetState("inactive")
 
-        --- while clicked in this text input, check its contents - if it's ever wrong, flash an error!
-        core:get_tm():repeat_real_callback(function()
-            --- if no text input (changed tab etc.) remove this callback
-            if not is_uicomponent(text_input) then
-                core:get_tm():remove_real_callback("mct_slider_text_input_" .. option_key)
-                return
-            end
-
-            local t = text_input:GetStateText()
-
-            local valid = option_obj:test_text(t)
-
-            local popup = option_obj:get_uic_with_key("error_popup")
-            if valid ~= true then
-                --- print out an error on the screen!
-                popup:SetVisible(true)
-                find_uicomponent(popup, "text"):SetStateText("[[col:red]]" .. valid .. "[[/col]]")
-                popup:RegisterTopMost()
-            else
-                
-                popup:RemoveTopMost()
-                popup:SetVisible(false)
-            end
-        end, 50, "mct_slider_text_input_" .. option_key)
-
-        --- TODO does this trigger on "enter"? <- NO.
-        core:add_listener(
-            "mct_slider_text_input_released",
-            "ComponentLClickUp",
-            function(context)
-                return UIComponent(context.component) ~= text_input
-            end,
-            function(context)
-                core:get_tm():remove_real_callback("mct_slider_text_input_" .. option_key)
-
-                local t = text_input:GetStateText()
-                local valid = option_obj:test_text(t)
-                if valid == true then
-                    t = tonumber(t)
-                    if t ~= option_obj:get_selected_setting() then
-                        option_obj:set_selected_setting(t)
-                    else
-                        --- TODO this is so the left/right buttons are reactivated, but I don't really like that.
-                        option_obj:ui_select_value(option_obj:get_selected_setting())
-                    end
+        option_obj:ui_watch_text_input(
+            text_input,
+            function(text) return option_obj:test_text(text) end,
+            function(text)
+                local value = tonumber(text)
+                if value ~= option_obj:get_selected_setting() then
+                    option_obj:set_selected_setting(value)
                 else
-                    --- TODO if the current text is invalid, revert it to the value it was before it all
-                    --- decide whether to leave the error up or just remove it entirely.
-                    option_obj:set_selected_setting(option_obj:get_finalized_setting())
-
-                    local uic = option_obj:get_uic_with_key("error_popup")
-                    if uic then
-                        uic:SetVisible(false)
-                    end
+                    -- the same value still needs redrawing, to turn the arrow buttons back on
+                    option_obj:ui_select_value(value)
                 end
-                
-
-            end,
-            false
+            end
         )
     end,
     true

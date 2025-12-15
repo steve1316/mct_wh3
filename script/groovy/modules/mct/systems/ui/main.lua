@@ -66,6 +66,11 @@ local function get_escape_key_manager()
     return cm or bm
 end
 
+--- Stop the timers that watch option controls, before those controls are destroyed.
+local function stop_option_watchers()
+    mct:get_mct_option_class().ui_stop_text_input_watch()
+end
+
 -- --- TODO load these elsewhere!
 -- local ui_path = "script/vlib/mct/core/ui/"
 
@@ -354,6 +359,7 @@ function UI_Main:set_selected_mod(mod_obj, page)
 
         ---@type UIC
         local uic = self.right_panel
+        stop_option_watchers()
         uic:DestroyChildren()
     
         self:set_title(mod_obj)
@@ -499,6 +505,7 @@ end
 
 
 function UI_Main:close_frame(already_dead)
+    stop_option_watchers()
     if not already_dead then delete_component(self.panel) end
 
     -- give ESC back to the game, so it opens the pause menu again
