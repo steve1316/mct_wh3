@@ -633,6 +633,26 @@ function mct:is_mct_section(obj)
     and obj:instanceOf(mct:get_mct_section_class())
 end
 
+--- Compare two option settings. Table settings, like a range slider's `{low, high}`, are equal when every field is equal.
+---@param a any
+---@param b any
+---@return boolean
+function mct:values_equal(a, b)
+    if not is_table(a) or not is_table(b) then
+        return a == b
+    end
+
+    for k, v in pairs(a) do
+        if b[k] ~= v then return false end
+    end
+
+    for k in pairs(b) do
+        if a[k] == nil then return false end
+    end
+
+    return true
+end
+
 --- Type-checker for @{mct_option} types.
 --- @param val any Tested value.
 --- @return boolean Whether it passes.

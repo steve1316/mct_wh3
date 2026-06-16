@@ -1291,7 +1291,7 @@ function mct_option:ui_refresh()
         --- only set visible if the selected setting is different than default AND we're not locked
         local vis =  false
         if not self:is_locked() then
-            if setting ~= self:get_default_value(true) then
+            if not mct:values_equal(setting, self:get_default_value(true)) then
                 vis = true
             end
         end

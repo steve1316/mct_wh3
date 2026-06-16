@@ -649,7 +649,7 @@ function mct_mod:revert_to_defaults()
         local current_val = option_obj:get_selected_setting()
         local default_val = option_obj:get_default_value(true)
 
-        if not is_nil(default_val) and current_val ~= default_val then
+        if not is_nil(default_val) and not mct:values_equal(current_val, default_val) then
             option_obj:set_selected_setting(default_val)
             --option_obj:ui_select_value(default_val)
         else
@@ -666,7 +666,7 @@ function mct_mod:are_any_settings_not_default()
         local current_val = option_obj:get_selected_setting()
         local default_val = option_obj:get_default_value()
 
-        if current_val ~= default_val then
+        if not mct:values_equal(current_val, default_val) then
             return true
         end
     end
@@ -740,7 +740,7 @@ function mct_mod:load_finalized_settings()
 
         -- only trigger the option-changed event if it's actually changing setting
         local selected = option:get_selected_setting()
-        if option:get_finalized_setting() ~= selected then
+        if not mct:values_equal(option:get_finalized_setting(), selected) then
             option:set_finalized_setting(selected)
         end
 
