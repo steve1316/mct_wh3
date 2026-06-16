@@ -655,13 +655,16 @@ function mct_option:set_selected_setting(val, is_from_popup)
         return false
     end
 
-    logf("Changing option %s of type %q to val %s", self:get_key(), self:get_type(), tostring(val))
+    logf("Changing option %s of type %q to val %s", self:get_key(), self:get_type(), self:get_value_text(val))
 
     --- If we have a confirmation popup, abort the operation and go through that. 
     if not is_from_popup and self:test_confirmation_popup(val, self:get_selected_setting()) then
         return
     end
     
+    -- copy table settings, so the registry never shares one with the caller
+    if is_table(val) then val = table.copy(val) end
+
     Registry:set_changed_setting(self, val)
     
     self:ui_refresh()
@@ -700,6 +703,13 @@ function mct_option:add_validity_test(callback)
     end
 
     self._validity_callbacks[#self._validity_callbacks+1] = callback
+end
+
+--- Get a setting as readable text, for logs and tooltips. Types with table settings or named values override this.
+---@param value any The setting.
+---@return string
+function mct_option:get_value_text(value)
+    return tostring(value)
 end
 
 --- Check an alignment name, logging an error if it isn't one.
@@ -1130,17 +1140,7 @@ function mct_option:ui_create_option_base(parent, w, h)
     if not is_nil(self:get_default_value(true)) then
         -- get the localised text associated with the default value, if it's a dropdown or radio button
         local default_value = self:get_default_value(true)
-        local default_value_text = tostring(default_value)
-
-        if self:is_dropdown() then
-            ---@cast self MCT.Option.Dropdown
-            local value = self:get_option(default_value)
-            default_value_text = value.text
-        elseif self:is_radiobutton() then
-            ---@cast self MCT.Option.RadioButton
-            local option = self:get_option(default_value)
-            default_value_text = option.text
-        end
+        local default_value_text = self:get_value_text(default_value)
 
         local test = common.get_localised_string(default_value_text)
         if test ~= "" then
@@ -1364,6 +1364,9 @@ function mct_option:set_finalized_setting(val, is_first_load)
         end
     end
 
+    -- copy table settings, so the finalized setting never shares one with the selected setting
+    if is_table(val) then val = table.copy(val) end
+
     self._finalized_setting = val
 
     -- trigger an event to listen for externally (skip if it's first load)
@@ -1376,6 +1379,8 @@ end
 ---@param val any Set the default setting as the passed value, tested with @{mct_option:is_val_valid_for_type}
 function mct_option:set_default_value(val)
     if self:is_val_valid_for_type(val) then
+        -- copy table settings, so changing the caller's table later doesn't change the default
+        if is_table(val) then val = table.copy(val) end
         self._default_setting = val
     end
 

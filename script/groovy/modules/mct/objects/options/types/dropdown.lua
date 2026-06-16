@@ -70,6 +70,14 @@ function Dropdown:get_option(key)
     return nil
 end
 
+--- Show a dropdown value as its text, for logs and the revert-to-defaults tooltip.
+---@param value any The dropdown value's key.
+---@return string
+function Dropdown:get_value_text(value)
+    local option = self:get_option(value)
+    return option and option.text or Super.get_value_text(self, value)
+end
+
 --- TODO use a Cco call instead somehow?
 --- Select a value within the UI; ie., change from the first dropdown value to the second.
 function Dropdown:ui_select_value(val)

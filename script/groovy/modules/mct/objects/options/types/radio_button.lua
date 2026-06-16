@@ -86,6 +86,14 @@ function RadioButton:get_option(i_or_key)
     return nil
 end
 
+--- Show a radio button value as its text, for logs and the revert-to-defaults tooltip.
+---@param value any The radio button's key.
+---@return string
+function RadioButton:get_value_text(value)
+    local option = self:get_option(value)
+    return option and option.text or Super.get_value_text(self, value)
+end
+
 --- Set the options that can be linked to the radio buttons; minimum of one button, maximum of four.
 --- Text and tooltip are required for each.
 --- TODO create all options
