@@ -1,4 +1,4 @@
----@alias MCT.OptionType 'slider'|'dropdown'|'checkbox'|'text_input'|'divider'|'text_list'|'text'
+---@alias MCT.OptionType 'slider'|'dropdown'|'checkbox'|'text_input'|'divider'|'text_list'|'range_slider'|'text'
 ---@alias MCT.System {_Types : {}, _Object : {}, _UI : {}, }
 
 ---@alias MCT.SelectedMod {[1]: MCT.Mod, [2]: MCT.Page}
@@ -255,6 +255,7 @@ end
 ---@overload fun(key:"checkbox"):MCT.Option.Checkbox
 ---@overload fun(key:"text_input"):MCT.Option.TextInput
 ---@overload fun(key:"slider"):MCT.Option.Slider
+---@overload fun(key:"range_slider"):MCT.Option.RangeSlider
 ---@overload fun(key:"dropdown"):MCT.Option.Dropdown
 ---@overload fun(key:"dummy"):MCT.Option.Dummy
 ---@overload fun(key:"divider"):MCT.Option.Divider

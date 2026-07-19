@@ -926,6 +926,7 @@ end
 ---@overload fun(self:MCT.Mod, option_key:string, option_type:"dropdown"):MCT.Option.Dropdown
 ---@overload fun(self:MCT.Mod, option_key:string, option_type:"dropdown_game_object"):MCT.Option.SpecialDropdown
 ---@overload fun(self:MCT.Mod, option_key:string, option_type:"slider"):MCT.Option.Slider
+---@overload fun(self:MCT.Mod, option_key:string, option_type:"range_slider"):MCT.Option.RangeSlider
 ---@overload fun(self:MCT.Mod, option_key:string, option_type:"text_input"):MCT.Option.TextInput
 ---@overload fun(self:MCT.Mod, option_key:string, option_type:"dummy"):MCT.Option.Dummy
 ---@overload fun(self:MCT.Mod, option_key:string, option_type:"divider"):MCT.Option.Divider
