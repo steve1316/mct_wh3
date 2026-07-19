@@ -16,11 +16,25 @@ local defaults = {
         step_size = 1,
         step_size_precision = 0,
         precision = 0,
-    }
+    },
+
+    ---@type "arrows"|"bar" How the slider is drawn. Set with `slider_set_style`.
+    _style = "arrows",
 }
 
 ---@class MCT.Option.Slider : MCT.Option A Slider Object.
 local Slider = Super:extend("MCT.Option.Slider", defaults)
+
+--- The bar sliders on screen, keyed by mod, option, and end. One shared timer reads their handles, since the game's slider doesn't tell
+--- script when it's dragged.
+---@type table<string, {option: MCT.Option.Slider, bar: UIC, handle: UIC, index: number?, last_value: number, moving: boolean}>
+local active_bars = {}
+
+--- The id of the shared timer that reads the bar handles.
+local BAR_POLL_KEY = "mct_slider_bar_poll"
+
+--- Whether the shared bar timer is running.
+local bar_poll_running = false
 
 function Slider:new(mod_obj, option_key)
     local o = self:__new()
@@ -97,6 +111,12 @@ function Slider:ui_select_value(val)
         val = new_val
     end
 
+    if self._style == "bar" then
+        text_input:SetStateText(tostring(self:slider_get_precise_value(val, true)))
+        self:bar_set_value(self:get_uic_with_key("bar"), val)
+        return Super.ui_select_value(self, val)
+    end
+
     local right_button = self:get_uic_with_key("right_button")
     local left_button = self:get_uic_with_key("left_button")
 
@@ -149,6 +169,13 @@ function Slider:ui_change_state()
     local left_button = self:get_uic_with_key("left_button")
     local right_button = self:get_uic_with_key("right_button")
 
+    if self._style == "bar" then
+        text_uic:SetInteractive(not locked)
+        text_uic:SetTooltipText(self:get_tooltip_text(), true)
+        self:bar_set_interactive(self:get_uic_with_key("bar"), not locked)
+        return
+    end
+
     local state = "active"
     local tt = self:get_tooltip_text()
     if locked then
@@ -188,6 +215,18 @@ function Slider:ui_create_option(dummy_parent)
     slider_parent:Resize(dummy_parent:Width() * 0.5, dummy_parent:Height())
 
     local text_input = core:get_or_create_component("mct_slider_text_input", text_input_template, slider_parent)
+
+    if self._style == "bar" then
+        local bar = self:ui_create_bar_beside_input(slider_parent, text_input, "bar")
+
+        self:set_uic_with_key("dummy_parent", slider_parent, true)
+        self:set_uic_with_key("option", text_input, true)
+        self:set_uic_with_key("bar", bar, true)
+        self:bar_register(bar, nil, self:get_selected_setting())
+
+        return slider_parent
+    end
+
     local left_button = core:get_or_create_component("left_button", left_button_template, slider_parent)
     local right_button = core:get_or_create_component("right_button", right_button_template, slider_parent)
 
@@ -362,6 +401,191 @@ function Slider:slider_set_min_max(min, max)
 end
 
 
+--- Set how this slider is drawn. "arrows", the default, is arrow buttons around a number box. "bar" is the game's draggable slider bar
+--- beside a number box.
+---@param style "arrows"|"bar"
+---@return MCT.Option.Slider|false
+function Slider:slider_set_style(style)
+    if style ~= "arrows" and style ~= "bar" then
+        err("slider_set_style() called for option ["..self:get_key().."], but the style ["..tostring(style).."] is not \"arrows\" or \"bar\"! Returning false.")
+        return false
+    end
+
+    self._style = style
+    return self
+end
+
+--- Get how this slider is drawn.
+---@return "arrows"|"bar"
+function Slider:slider_get_style()
+    return self._style
+end
+
+--- Create a draggable slider bar, left-docked in its parent. Its -/+ buttons sit outside the bar itself, so it leaves room for them.
+--- The layout is the game's slider without its -/+ button callbacks, which step by the game's own value. The -/+ buttons are handled below.
+---@param parent UIC The component to create the bar in.
+---@param id string The bar's id.
+---@param width number The width for the bar and its buttons.
+---@return UIC #The bar.
+function Slider:ui_create_bar(parent, id, width)
+    local button_room = 32
+
+    local bar = core:get_or_create_component(id, "ui/groovy/layouts/slider_bar", parent)
+    bar:SetCanResizeWidth(true)
+    bar:Resize(width - button_room * 2 - 8, bar:Height(), false)
+    bar:SetCanResizeWidth(false)
+    bar:SetDockingPoint(4)
+    bar:SetDockOffset(button_room, 0)
+
+    return bar
+end
+
+--- Turn a number box into the bar style: a fixed-width box docked right, and a draggable bar filling the space to its left. The parent is
+--- resized to the handle's height, since the handle sticks out of the bar, so the row lines up with what's drawn.
+---@param parent UIC The holder for the box and bar.
+---@param input UIC The number box, already created in `parent`.
+---@param bar_id string The bar's id.
+---@return UIC #The bar.
+function Slider:ui_create_bar_beside_input(parent, input, bar_id)
+    input:SetCanResizeWidth(true)
+    input:Resize(70, input:Height())
+    input:SetCanResizeWidth(false)
+    input:SetInteractive(true)
+
+    local bar = self:ui_create_bar(parent, bar_id, parent:Width() - input:Width())
+
+    -- dock after the resize, so both parts dock against the final height
+    parent:Resize(parent:Width(), find_uicomponent(bar, "handle"):Height(), false)
+    input:SetDockingPoint(6)
+    input:SetDockOffset(-2, 0)
+    bar:SetDockingPoint(4)
+
+    return bar
+end
+
+--- Read a bar's handle as a value, rounded to the step size and precision.
+---@param bar UIC
+---@param handle UIC The bar's handle.
+---@return number
+function Slider:bar_get_value(bar, handle)
+    local bar_x = bar:Position()
+    local handle_x = handle:Position()
+    local travel = bar:Width() - handle:Width()
+    local fraction = travel > 0 and math.clamp((handle_x - bar_x) / travel, 0, 1) or 0
+
+    local values = self:get_values()
+    local steps = math.floor(fraction * (values.max - values.min) / values.step_size + 0.5)
+    local value = math.clamp(values.min + steps * values.step_size, values.min, values.max)
+
+    return self:slider_get_precise_value(value, false)
+end
+
+--- The key for one bar in `active_bars`.
+---@param option MCT.Option.Slider
+---@param index number? The range end, or nil for a plain slider.
+---@return string
+local function bar_key(option, index)
+    return option:get_mod_key() .. "." .. option:get_key() .. "." .. tostring(index or 1)
+end
+
+--- Move a bar's handle to show a value.
+---@param bar UIC
+---@param value number
+---@param index number? The range end, or nil for a plain slider.
+function Slider:bar_set_value(bar, value, index)
+    if not is_uicomponent(bar) then return end
+
+    local handle = find_uicomponent(bar, "handle")
+    local values = self:get_values()
+    local range = values.max - values.min
+    local fraction = range > 0 and (value - values.min) / range or 0
+
+    local bar_x = bar:Position()
+    local _, handle_y = handle:Position()
+    handle:MoveTo(bar_x + fraction * (bar:Width() - handle:Width()), handle_y)
+
+    -- remember the shown value, so the timer doesn't mistake this move for a drag
+    local entry = active_bars[bar_key(self, index)]
+    if entry then entry.last_value = value end
+end
+
+--- Turn dragging and the +/- buttons on or off for a bar.
+---@param bar UIC
+---@param interactive boolean
+function Slider:bar_set_interactive(bar, interactive)
+    if not is_uicomponent(bar) then return end
+
+    for _, child_id in ipairs({"handle", "left", "right"}) do
+        local child = find_uicomponent(bar, child_id)
+        if child then child:SetInteractive(interactive) end
+    end
+end
+
+--- Called by the timer when a bar's handle moves. While it's held, only the number box follows. Once it's let go, the value is set.
+---@param index number? The range end, or nil for a plain slider.
+---@param value number The value under the handle.
+---@param settled boolean True once the handle is let go.
+function Slider:bar_on_moved(index, value, settled)
+    if not settled then
+        self:get_uic_with_key("option"):SetStateText(tostring(self:slider_get_precise_value(value, true)))
+    elseif value ~= self:get_selected_setting() then
+        self:set_selected_setting(value)
+    else
+        -- snap the handle onto the step it was dropped near
+        self:ui_select_value(value)
+    end
+end
+
+--- Check every bar on screen. Each read is rounded to a step, so scrolling the page doesn't count as a move. The handle shows its
+--- "down_off" state while the mouse holds it, so the value is only set once it's let go.
+local function poll_bars()
+    for key, entry in pairs(active_bars) do
+        if not is_uicomponent(entry.bar) then
+            active_bars[key] = nil
+        elseif not entry.option:is_locked() then
+            local value = entry.option:bar_get_value(entry.bar, entry.handle)
+            local held = entry.handle:CurrentState() == "down_off"
+
+            if value ~= entry.last_value then
+                entry.last_value = value
+                entry.moving = true
+                entry.option:bar_on_moved(entry.index, value, false)
+            end
+
+            if entry.moving and not held then
+                entry.moving = false
+                entry.option:bar_on_moved(entry.index, value, true)
+            end
+        end
+    end
+
+    if next(active_bars) == nil then
+        Slider.bar_clear_all()
+    end
+end
+
+--- Start watching a bar's handle, and start the shared timer if it isn't running.
+---@param bar UIC
+---@param index number? The range end, or nil for a plain slider.
+---@param value number The value the bar starts at.
+function Slider:bar_register(bar, index, value)
+    local handle = find_uicomponent(bar, "handle")
+    active_bars[bar_key(self, index)] = {option = self, bar = bar, handle = handle, index = index, last_value = value, moving = false}
+
+    if not bar_poll_running then
+        bar_poll_running = true
+        core:get_tm():repeat_real_callback(poll_bars, 200, BAR_POLL_KEY)
+    end
+end
+
+--- Stop watching every bar, and stop the shared timer. Called before the panel closes or a page is redrawn.
+function Slider.bar_clear_all()
+    for key in pairs(active_bars) do active_bars[key] = nil end
+
+    core:get_tm():remove_real_callback(BAR_POLL_KEY)
+    bar_poll_running = false
+end
+
 --- Read typed text as a number between two bounds, in this slider's precision.
 ---@param text any The typed text.
 ---@param lowest number The lowest allowed number.
@@ -425,8 +649,11 @@ core:add_listener(
         local left_button = option_obj:get_uic_with_key("left_button")
         local right_button = option_obj:get_uic_with_key("right_button")
 
-        left_button:SetState("inactive")
-        right_button:SetState("inactive")
+        -- the bar style has no arrow buttons
+        if left_button and right_button then
+            left_button:SetState("inactive")
+            right_button:SetState("inactive")
+        end
 
         option_obj:ui_watch_text_input(
             text_input,
@@ -479,6 +706,27 @@ core:add_listener(
             option_obj:set_selected_setting(option_obj:get_selected_setting() - step_size)
         end
     end) if not ok then err(msg) end
+    end,
+    true
+)
+
+--- The bar's -/+ buttons. The bar layout has no value callbacks, so each click moves its end one step here.
+core:add_listener(
+    "mct_slider_bar_button_pressed",
+    "ComponentLClickUp",
+    function(context)
+        if context.string ~= "left" and context.string ~= "right" then return false end
+
+        local uic = UIComponent(context.component)
+        return uicomponent_descended_from(uic, "slider_parent")
+    end,
+    function(context)
+        local bar = UIComponent(UIComponent(context.component):Parent())
+        local option_obj = mct:get_selected_mod():get_option_by_key(bar:GetProperty("mct_option"))
+        if not mct:is_mct_option(option_obj) or option_obj:is_locked() then return end
+
+        local step = option_obj:get_values().step_size * (context.string == "left" and -1 or 1)
+        option_obj:bar_on_moved(nil, option_obj:slider_get_precise_value(option_obj:get_selected_setting() + step, false), true)
     end,
     true
 )

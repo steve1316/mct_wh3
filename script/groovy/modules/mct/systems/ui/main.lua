@@ -69,6 +69,7 @@ end
 --- Stop the timers that watch option controls, before those controls are destroyed.
 local function stop_option_watchers()
     mct:get_mct_option_class().ui_stop_text_input_watch()
+    mct:get_mct_option_class_subtype("slider").bar_clear_all()
 end
 
 -- --- TODO load these elsewhere!
