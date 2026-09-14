@@ -36,6 +36,9 @@ local BAR_POLL_KEY = "mct_slider_bar_poll"
 --- Whether the shared bar timer is running.
 local bar_poll_running = false
 
+--- The range end each bar id belongs to. A plain slider's bar has none.
+local BAR_INDEXES = {low_bar = 1, high_bar = 2}
+
 function Slider:new(mod_obj, option_key)
     local o = self:__new()
     Super.init(o, mod_obj, option_key)
@@ -718,15 +721,19 @@ core:add_listener(
         if context.string ~= "left" and context.string ~= "right" then return false end
 
         local uic = UIComponent(context.component)
-        return uicomponent_descended_from(uic, "slider_parent")
+        return uicomponent_descended_from(uic, "slider_parent") or uicomponent_descended_from(uic, "range_parent")
     end,
     function(context)
         local bar = UIComponent(UIComponent(context.component):Parent())
         local option_obj = mct:get_selected_mod():get_option_by_key(bar:GetProperty("mct_option"))
         if not mct:is_mct_option(option_obj) or option_obj:is_locked() then return end
 
+        local index = BAR_INDEXES[bar:Id()]
+        local current = option_obj:get_selected_setting()
+        if index then current = current[index] end
+
         local step = option_obj:get_values().step_size * (context.string == "left" and -1 or 1)
-        option_obj:bar_on_moved(nil, option_obj:slider_get_precise_value(option_obj:get_selected_setting() + step, false), true)
+        option_obj:bar_on_moved(index, option_obj:slider_get_precise_value(current + step, false), true)
     end,
     true
 )

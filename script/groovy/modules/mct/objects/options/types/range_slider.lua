@@ -134,10 +134,14 @@ function RangeSlider:ui_select_value(val)
 
         input:SetStateText(tostring(self:slider_get_precise_value(val[i], true)))
 
-        left:SetState(val[i] <= lowest and "inactive" or "active")
-        right:SetState(val[i] >= highest and "inactive" or "active")
-        left:SetTooltipText("-"..step_size_str, true)
-        right:SetTooltipText("+"..step_size_str, true)
+        if left then
+            left:SetState(val[i] <= lowest and "inactive" or "active")
+            right:SetState(val[i] >= highest and "inactive" or "active")
+            left:SetTooltipText("-"..step_size_str, true)
+            right:SetTooltipText("+"..step_size_str, true)
+        else
+            self:bar_set_value(self:get_uic_with_key(side.."_bar"), val[i], i)
+        end
     end
 end
 
@@ -152,11 +156,34 @@ function RangeSlider:ui_change_state()
         input:SetInteractive(not locked)
         input:SetTooltipText(self:get_tooltip_text(), true)
 
-        if locked then
+        local left = self:get_uic_with_key(side.."_left")
+        if not left then
+            self:bar_set_interactive(self:get_uic_with_key(side.."_bar"), not locked)
+        elseif locked then
             -- unlocked arrow states are set by `ui_select_value`
-            self:get_uic_with_key(side.."_left"):SetState("inactive")
+            left:SetState("inactive")
             self:get_uic_with_key(side.."_right"):SetState("inactive")
         end
+    end
+end
+
+--- Called by the bar timer when one end's handle moves. Each end stops at the other one.
+---@param i number 1 for the low end, 2 for the high end.
+---@param value number The value under the handle.
+---@param settled boolean True once the handle has stopped.
+function RangeSlider:bar_on_moved(i, value, settled)
+    local current = self:get_selected_setting()
+    if i == 1 then value = math.min(value, current[2]) else value = math.max(value, current[1]) end
+
+    if not settled then
+        self:get_uic_with_key(SIDES[i].."_input"):SetStateText(tostring(self:slider_get_precise_value(value, true)))
+    elseif value ~= current[i] then
+        local new_value = table.copy(current)
+        new_value[i] = value
+        self:set_selected_setting(new_value)
+    else
+        -- snap the handle onto the step it was dropped near, or back off the other end
+        self:ui_select_value(current)
     end
 end
 
@@ -192,7 +219,31 @@ function RangeSlider:ui_create_arrows_end(range_parent, group, i, side, template
     self:set_uic_with_key(side.."_right", right, true)
 end
 
---- Create both ends side by side in the right half of the row.
+--- Create one end as a draggable bar with a number box on its right. The two ends are stacked, low on top.
+---@param range_parent UIC The holder for both ends.
+---@param group UIC This end's holder.
+---@param i number 1 for the low end, 2 for the high end.
+---@param side string "low" or "high".
+---@param templates string[] The arrow, text box, and arrow templates. Only the text box is used.
+function RangeSlider:ui_create_bar_end(range_parent, group, i, side, templates)
+    group:Resize(range_parent:Width(), range_parent:Height() / 2)
+
+    local input = core:get_or_create_component("mct_range_"..side.."_input", templates[2], group)
+    local bar = self:ui_create_bar_beside_input(group, input, side.."_bar")
+
+    self:set_uic_with_key(side.."_input", input, true)
+    self:set_uic_with_key(side.."_bar", bar, true)
+    self:bar_register(bar, i, self:get_selected_setting()[i])
+end
+
+--- The label lines up with the first line of the control. For stacked bars that's the low bar, not both.
+---@param control UIC The holder for both ends.
+---@return number
+function RangeSlider:ui_get_control_line_height(control)
+    return find_uicomponent(control, "low_group"):Height()
+end
+
+--- Create both ends in the right half of the row, as arrows or bars depending on the style.
 ---@param dummy_parent UIC The option row.
 ---@return UIC #The holder for both ends.
 function RangeSlider:ui_create_option(dummy_parent)
@@ -203,14 +254,21 @@ function RangeSlider:ui_create_option(dummy_parent)
 
     for i, side in ipairs(SIDES) do
         local group = core:get_or_create_component(side.."_group", "ui/campaign ui/script_dummy", range_parent)
-        self:ui_create_arrows_end(range_parent, group, i, side, templates)
+
+        if self._style == "bar" then
+            self:ui_create_bar_end(range_parent, group, i, side, templates)
+        else
+            self:ui_create_arrows_end(range_parent, group, i, side, templates)
+        end
     end
 
-    -- fit the holder to the ends, side by side
+    -- fit the holder to the ends: side by side, or stacked with a gap between the bars
     local low, high = find_uicomponent(range_parent, "low_group"), find_uicomponent(range_parent, "high_group")
-    range_parent:Resize(range_parent:Width(), low:Height(), false)
-    low:SetDockingPoint(4)
-    high:SetDockingPoint(6)
+    local stacked = self._style == "bar"
+    local height = stacked and low:Height() + mct:get_ui():get_spacing().stack_gap + high:Height() or low:Height()
+    range_parent:Resize(range_parent:Width(), height, false)
+    low:SetDockingPoint(stacked and 2 or 4)
+    high:SetDockingPoint(stacked and 8 or 6)
 
     self:set_uic_with_key("option", range_parent, true)
 
@@ -240,14 +298,9 @@ core:add_listener(
         local option_obj = get_unlocked_option(UIComponent(context.component))
         if not option_obj then return end
 
+        -- moves the end like a dropped bar handle, which stops it at the other end instead of letting them swap
         local i, direction = ARROWS[context.string][1], ARROWS[context.string][2]
-        local value = table.copy(option_obj:get_selected_setting())
-        value[i] = value[i] + direction * option_obj:get_values().step_size
-
-        -- stop each end at the other one, instead of letting them swap
-        if i == 1 then value[1] = math.min(value[1], value[2]) else value[2] = math.max(value[2], value[1]) end
-
-        option_obj:set_selected_setting(value)
+        option_obj:bar_on_moved(i, option_obj:get_selected_setting()[i] + direction * option_obj:get_values().step_size, true)
     end,
     true
 )

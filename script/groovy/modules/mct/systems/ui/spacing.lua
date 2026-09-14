@@ -32,6 +32,9 @@ return {
     ---@type number Space between a label and its control on the right.
     label_gap = 16,
 
+    ---@type number Space between stacked lines of one control, like the two bars of a range slider.
+    stack_gap = 10,
+
     ---@type number Space between a label and a control drawn under it.
     list_gap = 6,
 
