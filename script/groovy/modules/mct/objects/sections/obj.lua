@@ -386,6 +386,11 @@ function mct_section:populate(this_column, expected_width, expected_height)
     local dy_title = find_uicomponent(section_header, "dy_title") or section_header
     dy_title:SetStateText(text)
 
+    if can_collapse then
+        -- the row_header's expand/collapse icon is docked at x=6 and is 25 wide, so start the title past it
+        dy_title:SetDockOffset(40, 0)
+    end
+
     if tt_text ~= "" then
         section_header:SetTooltipText(tt_text, true)
     end
