@@ -282,15 +282,18 @@ function SettingsPage:populate(panel)
                 -- create a horizontal divider!
                 div_num = div_num + 1
                 local div_holder = core:get_or_create_component("divider_holder_"..div_num, "ui/campaign ui/script_dummy", box)
-                div_holder:Resize(box:Width(), 13)
+                div_holder:Resize(column:Width() * 0.95, 13, false)
 
-                
                 local div = core:get_or_create_component("divider", "ui/groovy/image", div_holder)
                 div:SetDockingPoint(5)
-                div:Resize(div_holder:Width() - 10, 13)
+                div:Resize(div_holder:Width() - 10, 13, false)
                 div:SetImagePath("ui/skins/default/parchment_divider_length.png", 0)
                 div:SetCurrentStateImageTiled(0, true)
                 div:SetCurrentStateImageMargins(0, 2, 0, 2, 0)
+
+                -- lock the size like the option rows, so a parent resize can't stretch the tiled image into a second line
+                div_holder:SetCanResizeWidth(false) div_holder:SetCanResizeHeight(false)
+                div:SetCanResizeWidth(false) div:SetCanResizeHeight(false)
             end
             -- column_h[column_num] = column_h[column_num] + h
         end
@@ -303,11 +306,11 @@ function SettingsPage:populate(panel)
             local clip = find_uicomponent(column, "list_clip")
             local box = find_uicomponent(clip, "list_box")
 
+            -- don't resize children. They're already sized for the column, and scaling them up from the template size stretches the dividers.
+            clip:Resize(column:Width(), column:Height(), false)
+            box:Resize(column:Width(), column:Height(), false)
+
             box:Layout()
-
-            clip:Resize(column:Width(), column:Height())
-            box:Resize(column:Width(), column:Height())
-
         end
     end
 
