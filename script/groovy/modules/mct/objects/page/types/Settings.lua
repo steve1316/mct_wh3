@@ -206,6 +206,11 @@ function SettingsPage:populate(panel)
         GLib.Log("Docking point for column %d is %d", i, docking_point)
 
         column:SetDockingPoint(docking_point)
+
+        -- top padding, so the first section isn't flush against the page title
+        local top_padding = core:get_or_create_component("padding_top", "ui/campaign ui/script_dummy", column_box)
+        top_padding:Resize(column:Width(), 10, false)
+        top_padding:SetCanResizeWidth(false) top_padding:SetCanResizeHeight(false)
     end
 
     --- TODO cleanly split the sections between the columns
@@ -281,8 +286,9 @@ function SettingsPage:populate(panel)
             if not is_last_in_column then
                 -- create a horizontal divider!
                 div_num = div_num + 1
+                -- the holder is taller than the 13px divider image to pad the space between sections
                 local div_holder = core:get_or_create_component("divider_holder_"..div_num, "ui/campaign ui/script_dummy", box)
-                div_holder:Resize(column:Width() * 0.95, 13, false)
+                div_holder:Resize(column:Width() * 0.95, 30, false)
 
                 local div = core:get_or_create_component("divider", "ui/groovy/image", div_holder)
                 div:SetDockingPoint(5)
@@ -305,6 +311,11 @@ function SettingsPage:populate(panel)
         if column then
             local clip = find_uicomponent(column, "list_clip")
             local box = find_uicomponent(clip, "list_box")
+
+            -- bottom padding, so the last option isn't cut off by the panel frame when scrolled to the end
+            local bottom_padding = core:get_or_create_component("padding_bottom", "ui/campaign ui/script_dummy", box)
+            bottom_padding:Resize(column:Width(), 30, false)
+            bottom_padding:SetCanResizeWidth(false) bottom_padding:SetCanResizeHeight(false)
 
             -- don't resize children. They're already sized for the column, and scaling them up from the template size stretches the dividers.
             clip:Resize(column:Width(), column:Height(), false)
