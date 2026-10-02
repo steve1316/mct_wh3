@@ -1,4 +1,4 @@
---- MCT image type. A picture on its own row, centred, at its own size or shrunk to fit the row. Holds no setting.
+--- MCT image type. A picture on its own row, with a choice of size and alignment. Holds no setting.
 --- The image must ship inside a mod pack, like `ui/my_mod/banner.png`. Text does not wrap around it.
 
 local mct = get_mct()
@@ -8,10 +8,22 @@ local log,logf,err,errf = get_vlog("[mct]")
 ---@type MCT.Option.Dummy
 local Dummy = GLib.LoadModule("dummy", GLib.ThisPath(...))
 
+--- The dock point inside the row for each alignment.
+local ALIGNMENT_DOCKS = {left = 4, centre = 5, right = 6}
+
 ---@class MCT.Option.Image
 local defaults = {
     ---@type string The image path inside a pack. Set with `image_set_path`.
     _path = "",
+
+    ---@type number? The width to draw the image at. Uses the image's own width when not set.
+    _width = nil,
+
+    ---@type number? The height to draw the image at. Uses the image's own height when not set.
+    _height = nil,
+
+    ---@type "left"|"centre"|"right" Where the image sits in the row. Set with `image_set_alignment`.
+    _alignment = "centre",
 
     ---@type number The row layout: full width with no label, so the row fits the image.
     _control_dock_point = 5,
@@ -40,13 +52,51 @@ function Image:image_get_path()
     return self._path
 end
 
+--- Set the size to draw the image at, instead of its own size. An image wider than the row still shrinks to fit, keeping its shape.
+---@param width number
+---@param height number
+---@return MCT.Option.Image|false
+function Image:image_set_size(width, height)
+    if not is_number(width) or not is_number(height) or width <= 0 or height <= 0 then
+        err("image_set_size() called for option ["..self:get_key().."], but the width and height must be numbers above 0! Returning false.")
+        return false
+    end
+
+    self._width = width
+    self._height = height
+    return self
+end
+
+--- Get the size set with `image_set_size`, or nil for the image's own size.
+---@return number?, number?
+function Image:image_get_size()
+    return self._width, self._height
+end
+
+--- Set where the image sits in the row. Only read when the image is created in the UI.
+---@param alignment "left"|"centre"|"center"|"right"
+---@return MCT.Option.Image|false
+function Image:image_set_alignment(alignment)
+    local name = self:check_alignment(alignment, "image_set_alignment")
+    if not name then return false end
+
+    self._alignment = name
+    return self
+end
+
+--- Get where the image sits in the row.
+---@return "left"|"centre"|"right"
+function Image:image_get_alignment()
+    return self._alignment
+end
+
 --- Work out the size to draw the image at, shrunk to fit `max_w` while keeping its shape.
 ---@param natural_w number The image's own width.
 ---@param natural_h number The image's own height.
 ---@param max_w number The widest the image can be.
 ---@return number, number
 function Image:ui_get_draw_size(natural_w, natural_h, max_w)
-    local w, h = natural_w, natural_h
+    local w, h = self._width or natural_w, self._height or natural_h
     if w > max_w then
         h = h * max_w / w
         w = max_w
@@ -84,9 +134,12 @@ function Image:ui_create_option(dummy_parent)
             img:Resize(img_w, img_h)
             img:ResizeCurrentStateImage(0, img_w, img_h)
             img:SetCanResizeWidth(false) img:SetCanResizeHeight(false)
-            img:SetDockingPoint(5)
+            img:SetDockingPoint(ALIGNMENT_DOCKS[self._alignment])
             img:SetDockOffset(0, 0)
-            img:SetInteractive(false)
+
+            local tt = self:get_tooltip_text()
+            img:SetInteractive(tt ~= "")
+            if tt ~= "" then img:SetTooltipText(tt, true) end
         end
     end
 
