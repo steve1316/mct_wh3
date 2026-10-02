@@ -932,6 +932,7 @@ end
 ---@overload fun(self:MCT.Mod, option_key:string, option_type:"divider"):MCT.Option.Divider
 ---@overload fun(self:MCT.Mod, option_key:string, option_type:"text_list"):MCT.Option.TextList
 ---@overload fun(self:MCT.Mod, option_key:string, option_type:"text"):MCT.Option.Text
+---@overload fun(self:MCT.Mod, option_key:string, option_type:"image"):MCT.Option.Image
 ---@overload fun(self:MCT.Mod, option_key:string, option_type:"radio_button"):MCT.Option.Dummy
 ---@param option_key string The unique identifier for the new mct_option.
 ---@param option_type MCT.OptionType The type for the new mct_option.
